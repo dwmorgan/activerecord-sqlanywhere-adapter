@@ -2,35 +2,35 @@ module Arel
   module Visitors
     class SQLAnywhere < Arel::Visitors::ToSql
       private
-        def visit_Arel_Nodes_SelectStatement o
-	  o = order_hacks(o)
+      def visit_Arel_Nodes_SelectStatement o
+        o = order_hacks(o)
 
-	  is_distinct = using_distinct?(o)
-	  
-	  o.limit = 1000000 if (o.offset && !o.limit)
+        is_distinct = using_distinct?(o)
+        
+        o.limit = 1000000 if (o.offset && !o.limit)
 
-	  if (o.limit || o.offset) && is_distinct
-	    o.cores.map { |cores| cores.projections.first.gsub!('DISTINCT', '') }
-	    #{ |projection| /DISTINCT/ === projection}}
-	  end
+        if (o.limit || o.offset) && is_distinct
+          o.cores.map { |cores| cores.projections.first.gsub!('DISTINCT', '') }
+          #{ |projection| /DISTINCT/ === projection}}
+        end
 
-	  [
-	    "SELECT",
-	    ("DISTINCT" if (o.limit || o.offset) && is_distinct),
-	    ("TOP #{o.limit}" if o.limit),
-	    (visit(o.offset) if o.offset),
-	    o.cores.map { |x| visit_Arel_Nodes_SelectCore x }.join,
-	    ("ORDER BY #{o.orders.map { |x| visit x }.join(', ')}" unless o.orders.empty?),
-            #("LIMIT #{o.limit}" if o.limit),
-            #(visit(o.offset) if o.offset),
-	    (visit(o.lock) if o.lock),
-	  ].compact.join ' '
-	end
+        [
+          "SELECT",
+          ("DISTINCT" if (o.limit || o.offset) && is_distinct),
+          ("TOP #{o.limit.expr}" if o.limit),
+          (visit(o.offset) if o.offset),
+          o.cores.map { |x| visit_Arel_Nodes_SelectCore x }.join,
+          ("ORDER BY #{o.orders.map { |x| visit x }.join(', ')}" unless o.orders.empty?),
+                #("LIMIT #{o.limit}" if o.limit),
+                #(visit(o.offset) if o.offset),
+          (visit(o.lock) if o.lock),
+        ].compact.join ' '
+      end
 
       def visit_Arel_Nodes_SelectCore o
         [
           "#{o.projections.map { |x| visit x }.join ', '}",
-          ("FROM #{visit o.froms}" if o.froms),
+          ("FROM #{visit(o.source)}" if o.source && !o.source.empty?),
           ("WHERE #{o.wheres.map { |x| visit x }.join ' AND ' }" unless o.wheres.empty?),
           ("GROUP BY #{o.groups.map { |x| visit x }.join ', ' }" unless o.groups.empty?),
           (visit(o.having) if o.having),
@@ -43,13 +43,13 @@ module Arel
       end
 
 
-	def using_distinct?(o)
-	  o.cores.any? do |cores|
-	    cores.projections.any? do |projection|
-	      /DISTINCT/ === projection
-	    end
-	  end
-	end      
+      def using_distinct?(o)
+        o.cores.any? do |cores|
+          cores.projections.any? do |projection|
+            /DISTINCT/ === projection
+          end
+        end
+      end      
 
       # The functions (order_hacks, split_order_string) are based on the Oracle Enhacned ActiveRecord driver maintained by Raimonds Simanovskis (2010)
       # (https://github.com/rsim/oracle-enhanced)
